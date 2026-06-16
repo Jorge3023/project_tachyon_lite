@@ -1,4 +1,4 @@
-Herramienta web para análisis de reportes de producción SMT.
+Herramienta web para análisis de reportes de producción.
 Sube el Excel crudo → descarga el análisis. Sin base de datos, sin login complejo.
 
 ---
