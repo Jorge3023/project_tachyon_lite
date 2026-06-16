@@ -50,9 +50,11 @@ def procesar():
             "error": "Nombre de archivo vacío"
         }), 400
 
-    if not archivo.filename.lower().endswith(".csv", ".xlsx", "xls"):
+    if not archivo.filename.lower().endswith(
+        (".csv", ".xlsx", ".xls")
+    ):
         return jsonify({
-            "error": "Solo se aceptan archivos .csv, .xlsx, xls"
+            "error": "Solo se aceptan archivos .csv, .xlsx o .xls"
         }), 400
 
     try:
