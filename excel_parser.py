@@ -1,12 +1,6 @@
 import io
 import pandas as pd
 
-──────────────────────────────────────────────
-
-Lectura de archivo
-
-──────────────────────────────────────────────
-
 def leer_archivo(file_bytes, nombre_archivo):
 
 nombre = nombre_archivo.lower()
@@ -35,12 +29,6 @@ elif nombre.endswith((".xlsx", ".xls")):
 raise ValueError(
     "Formato no soportado. Utiliza CSV, XLSX o XLS."
 )
-
-──────────────────────────────────────────────
-
-Procesamiento
-
-──────────────────────────────────────────────
 
 def procesar_datos(df):
 
@@ -81,10 +69,6 @@ for _, row in df.iterrows():
 
     if pd.notna(row["Job"]):
         job = str(row["Job"]).strip()
-
-    # ──────────────────────────────────
-    # Cambio de modelo
-    # ──────────────────────────────────
 
     if job and job.lower() != "nan":
 
@@ -131,10 +115,6 @@ for _, row in df.iterrows():
 
         continue
 
-    # ──────────────────────────────────
-    # Producción
-    # ──────────────────────────────────
-
     try:
 
         panel = row["Panel"]
@@ -160,10 +140,6 @@ for _, row in df.iterrows():
 
     except Exception:
         continue
-
-# ──────────────────────────────────
-# Último modelo
-# ──────────────────────────────────
 
 if (
     modelo_actual is not None
@@ -197,12 +173,6 @@ if (
 
 return pd.DataFrame(resultados)
 
-──────────────────────────────────────────────
-
-Exportar Excel
-
-──────────────────────────────────────────────
-
 def exportar_excel(reporte):
 
 output = io.BytesIO()
@@ -224,12 +194,6 @@ with pd.ExcelWriter(
     ws.set_column("B:D", 20)
 
 return output.getvalue()
-
-──────────────────────────────────────────────
-
-Función pública
-
-──────────────────────────────────────────────
 
 def procesar_excel(
 file_bytes,
