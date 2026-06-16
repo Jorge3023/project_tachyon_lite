@@ -1,186 +1,125 @@
+from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask_cors import CORS
 import io
-import pandas as pd
+import os
+import traceback
 
-def leer_csv(file_bytes):
+from excel_parser import procesar_excel
 
-try:
-    return pd.read_csv(
-        io.BytesIO(file_bytes),
-        encoding="utf-8"
-    )
-except Exception:
-    return pd.read_csv(
-        io.BytesIO(file_bytes),
-        encoding="latin1"
-    )
+app = Flask(__name__, static_folder="static", static_url_path="/static")
+CORS(app)
 
-def procesar_datos(df):
+ACCESS_KEY = os.environ.get("ACCESS_KEY", "smt2026")
 
-df.columns = [str(c).strip() for c in df.columns]
 
-if "Job" not in df.columns:
-    raise ValueError("No se encontró la columna Job")
+@app.route("/")
+def index():
+    return send_from_directory(".", "index.html")
 
-if "Panel" not in df.columns:
-    raise ValueError("No se encontró la columna Panel")
 
-if "End time" not in df.columns:
-    raise ValueError("No se encontró la columna End time")
+@app.route("/verificar-clave", methods=["POST"])
+def verificar_clave():
 
-resultados = []
+    key = request.form.get("key", "")
 
-modelo_actual = None
+    if key != ACCESS_KEY:
+        return jsonify({"ok": False}), 401
 
-paneles = []
+    return jsonify({"ok": True})
 
-primera_fecha = None
-ultima_fecha = None
 
-fin_modelo_anterior = None
+@app.route("/procesar", methods=["POST"])
+def procesar():
 
-for _, row in df.iterrows():
+    key = request.form.get("key", "")
 
-    job = ""
+    if key != ACCESS_KEY:
+        return jsonify({
+            "error": "Sesión inválida. Vuelve a iniciar sesión."
+        }), 401
 
-    if pd.notna(row["Job"]):
-        job = str(row["Job"]).strip()
+    if "file" not in request.files:
+        return jsonify({
+            "error": "No se recibió ningún archivo"
+        }), 400
 
-    if job and job.lower() != "nan":
+    archivo = request.files["file"]
 
-        if modelo_actual and paneles:
+    if not archivo.filename:
+        return jsonify({
+            "error": "Nombre de archivo vacío"
+        }), 400
 
-            primer_panel = min(paneles)
-            ultimo_panel = max(paneles)
-
-            piezas = (ultimo_panel - primer_panel) + 1
-
-            if fin_modelo_anterior is None:
-                inicio = primera_fecha
-            else:
-                inicio = fin_modelo_anterior
-
-            fin = ultima_fecha
-
-            duracion = fin - inicio
-
-            horas = int(duracion.total_seconds() // 3600)
-
-            minutos = int(
-                (duracion.total_seconds() % 3600) // 60
-            )
-
-            resultados.append({
-                "Modelo": modelo_actual,
-                "Horas Trabajadas": horas,
-                "Minutos Trabajados": minutos,
-                "Piezas": piezas
-            })
-
-            fin_modelo_anterior = ultima_fecha
-
-        modelo_actual = job
-
-        paneles = []
-
-        primera_fecha = None
-        ultima_fecha = None
-
-        continue
+    if not archivo.filename.lower().endswith(".csv"):
+        return jsonify({
+            "error": "Solo se aceptan archivos .csv"
+        }), 400
 
     try:
 
-        panel = int(float(row["Panel"]))
+        contenido = archivo.read()
 
-        fecha = pd.to_datetime(
-            row["End time"],
-            dayfirst=True,
-            errors="coerce"
+        resultado = procesar_excel(contenido)
+
+        resumen = resultado["resumen"]
+
+        nombre_base = archivo.filename.rsplit(".", 1)[0]
+
+        app.config["_ultimo_excel"] = resultado["excel_out"]
+
+        app.config["_ultimo_nombre"] = (
+            f"{nombre_base}_analisis.xlsx"
         )
 
-        if pd.isna(fecha):
-            continue
+        return jsonify({
+            "ok": True,
+            "resumen": resumen
+        })
 
-        paneles.append(panel)
+    except ValueError as e:
 
-        if primera_fecha is None:
-            primera_fecha = fecha
-
-        ultima_fecha = fecha
+        return jsonify({
+            "error": str(e)
+        }), 422
 
     except Exception:
-        continue
 
-if modelo_actual and paneles:
+        traceback.print_exc()
 
-    primer_panel = min(paneles)
+        return jsonify({
+            "error": "Error al procesar el archivo CSV"
+        }), 500
 
-    ultimo_panel = max(paneles)
 
-    piezas = (ultimo_panel - primer_panel) + 1
+@app.route("/descargar")
+def descargar():
 
-    if fin_modelo_anterior is None:
-        inicio = primera_fecha
-    else:
-        inicio = fin_modelo_anterior
+    excel = app.config.get("_ultimo_excel")
 
-    fin = ultima_fecha
-
-    duracion = fin - inicio
-
-    horas = int(duracion.total_seconds() // 3600)
-
-    minutos = int(
-        (duracion.total_seconds() % 3600) // 60
+    nombre = app.config.get(
+        "_ultimo_nombre",
+        "reporte_analisis.xlsx"
     )
 
-    resultados.append({
-        "Modelo": modelo_actual,
-        "Horas Trabajadas": horas,
-        "Minutos Trabajados": minutos,
-        "Piezas": piezas
-    })
+    if not excel:
+        return jsonify({
+            "error": "No hay reporte disponible"
+        }), 404
 
-return pd.DataFrame(resultados)
-
-def exportar_excel(reporte):
-
-output = io.BytesIO()
-
-with pd.ExcelWriter(
-    output,
-    engine="xlsxwriter"
-) as writer:
-
-    reporte.to_excel(
-        writer,
-        sheet_name="Resumen",
-        index=False
+    return send_file(
+        io.BytesIO(excel),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=nombre,
     )
 
-    ws = writer.sheets["Resumen"]
 
-    ws.set_column("A:A", 45)
-    ws.set_column("B:D", 20)
+if __name__ == "__main__":
 
-return output.getvalue()
+    port = int(os.environ.get("PORT", 5000))
 
-def procesar_excel(file_bytes):
-
-df = leer_csv(file_bytes)
-
-reporte = procesar_datos(df)
-
-excel_out = exportar_excel(reporte)
-
-resumen = {
-    "modelos": int(len(reporte)),
-    "piezas_totales": int(reporte["Piezas"].sum()),
-    "horas_totales": int(reporte["Horas Trabajadas"].sum()),
-    "minutos_totales": int(reporte["Minutos Trabajados"].sum())
-}
-
-return {
-    "reporte": reporte,
-    "excel_out": excel_out,
-    "resumen": resumen
-}
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+    )
