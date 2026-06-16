@@ -1,120 +1,186 @@
-from flask import Flask, request, jsonify, send_file, send_from_directory
-from flask_cors import CORS
 import io
-import os
-import traceback
+import pandas as pd
 
-from excel_parser import procesar_excel
-
-app = Flask(name, static_folder="static", static_url_path="/static")
-CORS(app)
-
-ACCESS_KEY = os.environ.get("ACCESS_KEY", "smt2026")
-
-@app.route("/")
-def index():
-return send_from_directory(".", "index.html")
-
-@app.route("/verificar-clave", methods=["POST"])
-def verificar_clave():
-
-key = request.form.get("key", "")
-
-if key != ACCESS_KEY:
-    return jsonify({"ok": False}), 401
-
-return jsonify({"ok": True})
-
-@app.route("/procesar", methods=["POST"])
-def procesar():
-
-key = request.form.get("key", "")
-
-if key != ACCESS_KEY:
-    return jsonify({
-        "error": "Sesión inválida. Vuelve a iniciar sesión."
-    }), 401
-
-if "file" not in request.files:
-    return jsonify({
-        "error": "No se recibió ningún archivo"
-    }), 400
-
-archivo = request.files["file"]
-
-if not archivo.filename:
-    return jsonify({
-        "error": "Nombre de archivo vacío"
-    }), 400
-
-if not archivo.filename.lower().endswith(".csv"):
-    return jsonify({
-        "error": "Solo se aceptan archivos .csv"
-    }), 400
+def leer_csv(file_bytes):
 
 try:
-
-    contenido = archivo.read()
-
-    resultado = procesar_excel(contenido)
-
-    resumen = resultado["resumen"]
-
-    nombre_base = archivo.filename.rsplit(".", 1)[0]
-
-    app.config["_ultimo_excel"] = resultado["excel_out"]
-
-    app.config["_ultimo_nombre"] = (
-        f"{nombre_base}_analisis.xlsx"
+    return pd.read_csv(
+        io.BytesIO(file_bytes),
+        encoding="utf-8"
+    )
+except Exception:
+    return pd.read_csv(
+        io.BytesIO(file_bytes),
+        encoding="latin1"
     )
 
-    return jsonify({
-        "ok": True,
-        "resumen": resumen
+def procesar_datos(df):
+
+df.columns = [str(c).strip() for c in df.columns]
+
+if "Job" not in df.columns:
+    raise ValueError("No se encontró la columna Job")
+
+if "Panel" not in df.columns:
+    raise ValueError("No se encontró la columna Panel")
+
+if "End time" not in df.columns:
+    raise ValueError("No se encontró la columna End time")
+
+resultados = []
+
+modelo_actual = None
+
+paneles = []
+
+primera_fecha = None
+ultima_fecha = None
+
+fin_modelo_anterior = None
+
+for _, row in df.iterrows():
+
+    job = ""
+
+    if pd.notna(row["Job"]):
+        job = str(row["Job"]).strip()
+
+    if job and job.lower() != "nan":
+
+        if modelo_actual and paneles:
+
+            primer_panel = min(paneles)
+            ultimo_panel = max(paneles)
+
+            piezas = (ultimo_panel - primer_panel) + 1
+
+            if fin_modelo_anterior is None:
+                inicio = primera_fecha
+            else:
+                inicio = fin_modelo_anterior
+
+            fin = ultima_fecha
+
+            duracion = fin - inicio
+
+            horas = int(duracion.total_seconds() // 3600)
+
+            minutos = int(
+                (duracion.total_seconds() % 3600) // 60
+            )
+
+            resultados.append({
+                "Modelo": modelo_actual,
+                "Horas Trabajadas": horas,
+                "Minutos Trabajados": minutos,
+                "Piezas": piezas
+            })
+
+            fin_modelo_anterior = ultima_fecha
+
+        modelo_actual = job
+
+        paneles = []
+
+        primera_fecha = None
+        ultima_fecha = None
+
+        continue
+
+    try:
+
+        panel = int(float(row["Panel"]))
+
+        fecha = pd.to_datetime(
+            row["End time"],
+            dayfirst=True,
+            errors="coerce"
+        )
+
+        if pd.isna(fecha):
+            continue
+
+        paneles.append(panel)
+
+        if primera_fecha is None:
+            primera_fecha = fecha
+
+        ultima_fecha = fecha
+
+    except Exception:
+        continue
+
+if modelo_actual and paneles:
+
+    primer_panel = min(paneles)
+
+    ultimo_panel = max(paneles)
+
+    piezas = (ultimo_panel - primer_panel) + 1
+
+    if fin_modelo_anterior is None:
+        inicio = primera_fecha
+    else:
+        inicio = fin_modelo_anterior
+
+    fin = ultima_fecha
+
+    duracion = fin - inicio
+
+    horas = int(duracion.total_seconds() // 3600)
+
+    minutos = int(
+        (duracion.total_seconds() % 3600) // 60
+    )
+
+    resultados.append({
+        "Modelo": modelo_actual,
+        "Horas Trabajadas": horas,
+        "Minutos Trabajados": minutos,
+        "Piezas": piezas
     })
 
-except ValueError as e:
+return pd.DataFrame(resultados)
 
-    return jsonify({
-        "error": str(e)
-    }), 422
+def exportar_excel(reporte):
 
-except Exception:
+output = io.BytesIO()
 
-    traceback.print_exc()
+with pd.ExcelWriter(
+    output,
+    engine="xlsxwriter"
+) as writer:
 
-    return jsonify({
-        "error": "Error al procesar el archivo CSV"
-    }), 500
+    reporte.to_excel(
+        writer,
+        sheet_name="Resumen",
+        index=False
+    )
 
-@app.route("/descargar")
-def descargar():
+    ws = writer.sheets["Resumen"]
 
-excel = app.config.get("_ultimo_excel")
+    ws.set_column("A:A", 45)
+    ws.set_column("B:D", 20)
 
-nombre = app.config.get(
-    "_ultimo_nombre",
-    "reporte_analisis.xlsx"
-)
+return output.getvalue()
 
-if not excel:
-    return jsonify({
-        "error": "No hay reporte disponible"
-    }), 404
+def procesar_excel(file_bytes):
 
-return send_file(
-    io.BytesIO(excel),
-    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    as_attachment=True,
-    download_name=nombre,
-)
+df = leer_csv(file_bytes)
 
-if name == "main":
+reporte = procesar_datos(df)
 
-port = int(os.environ.get("PORT", 5000))
+excel_out = exportar_excel(reporte)
 
-app.run(
-    host="0.0.0.0",
-    port=port,
-    debug=False
-)
+resumen = {
+    "modelos": int(len(reporte)),
+    "piezas_totales": int(reporte["Piezas"].sum()),
+    "horas_totales": int(reporte["Horas Trabajadas"].sum()),
+    "minutos_totales": int(reporte["Minutos Trabajados"].sum())
+}
+
+return {
+    "reporte": reporte,
+    "excel_out": excel_out,
+    "resumen": resumen
+}
