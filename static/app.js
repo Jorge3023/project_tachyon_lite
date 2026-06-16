@@ -135,8 +135,8 @@ function onFileChange(e) {
 }
 
 function setArchivo(file) {
-  if (!file.name.match(/\.(xlsx|xls)$/i)) {
-    mostrarAlerta('Solo se aceptan archivos .xlsx o .xls', 'error'); return
+  if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
+    mostrarAlerta('Solo se aceptan archivos .xlsx o .xls o .csv', 'error'); return
   }
   archivoActual = file
   document.getElementById('fileName').textContent = file.name
