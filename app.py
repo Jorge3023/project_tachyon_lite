@@ -22,7 +22,7 @@ ACCESS_KEY = os.environ.get(
 @app.route("/")
 def index():
 
-return send_from_directory(
+    return send_from_directory(
     ".",
     "index.html"
 )
