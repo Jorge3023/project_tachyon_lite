@@ -5,19 +5,30 @@ import pandas as pd
 # ─────────────────────────────────────────────────────────────
 # Leer CSV
 # ─────────────────────────────────────────────────────────────
+def leer_archivo(file_bytes, nombre_archivo):
 
-def leer_csv(file_bytes: bytes) -> pd.DataFrame:
+    nombre = nombre_archivo.lower()
 
-    try:
-        return pd.read_csv(
-            io.BytesIO(file_bytes),
-            encoding="utf-8"
+    if nombre.endswith(".csv"):
+
+        try:
+            return pd.read_csv(
+                io.BytesIO(file_bytes),
+                encoding="utf-8"
+            )
+        except:
+            return pd.read_csv(
+                io.BytesIO(file_bytes),
+                encoding="latin1"
+            )
+
+    elif nombre.endswith((".xlsx", ".xls")):
+
+        return pd.read_excel(
+            io.BytesIO(file_bytes)
         )
-    except Exception:
-        return pd.read_csv(
-            io.BytesIO(file_bytes),
-            encoding="latin1"
-        )
+
+    raise ValueError("Formato no soportado")
 
 
 # ─────────────────────────────────────────────────────────────
