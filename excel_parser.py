@@ -1,222 +1,267 @@
 import io
 import pandas as pd
 
+──────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────
-# Leer CSV
-# ─────────────────────────────────────────────────────────────
+Lectura de archivo
+
+──────────────────────────────────────────────
+
 def leer_archivo(file_bytes, nombre_archivo):
 
-    nombre = nombre_archivo.lower()
+nombre = nombre_archivo.lower()
 
-    if nombre.endswith(".csv"):
+if nombre.endswith(".csv"):
 
-        try:
-            return pd.read_csv(
-                io.BytesIO(file_bytes),
-                encoding="utf-8"
-            )
-        except:
-            return pd.read_csv(
-                io.BytesIO(file_bytes),
-                encoding="latin1"
-            )
-
-    elif nombre.endswith((".xlsx", ".xls")):
-
-        return pd.read_excel(
-            io.BytesIO(file_bytes)
+    try:
+        return pd.read_csv(
+            io.BytesIO(file_bytes),
+            encoding="utf-8"
         )
 
-    raise ValueError("Formato no soportado")
+    except Exception:
 
+        return pd.read_csv(
+            io.BytesIO(file_bytes),
+            encoding="latin1"
+        )
 
-# ─────────────────────────────────────────────────────────────
-# Procesar archivo
-# ─────────────────────────────────────────────────────────────
+elif nombre.endswith((".xlsx", ".xls")):
 
-def procesar_datos(df: pd.DataFrame):
+    return pd.read_excel(
+        io.BytesIO(file_bytes)
+    )
 
-    columnas = [str(c).strip() for c in df.columns]
-    df.columns = columnas
+raise ValueError(
+    "Formato no soportado. Utiliza CSV, XLSX o XLS."
+)
 
-    if "Job" not in df.columns:
-        raise ValueError("No se encontró la columna 'Job'")
+──────────────────────────────────────────────
 
-    if "Panel" not in df.columns:
-        raise ValueError("No se encontró la columna 'Panel'")
+Procesamiento
 
-    if "End time" not in df.columns:
-        raise ValueError("No se encontró la columna 'End time'")
+──────────────────────────────────────────────
 
-    resultados = []
+def procesar_datos(df):
 
-    modelo_actual = None
-    paneles = []
+df.columns = [
+    str(c).strip()
+    for c in df.columns
+]
 
-    primera_pieza = None
-    ultima_pieza = None
+if "Job" not in df.columns:
+    raise ValueError(
+        "No se encontró la columna Job"
+    )
 
-    fin_modelo_anterior = None
+if "Panel" not in df.columns:
+    raise ValueError(
+        "No se encontró la columna Panel"
+    )
 
-    for _, row in df.iterrows():
+if "End time" not in df.columns:
+    raise ValueError(
+        "No se encontró la columna End time"
+    )
 
-        job = str(row["Job"]).strip() if pd.notna(row["Job"]) else ""
+resultados = []
 
-        # -----------------------------------------------------
-        # Cambio de modelo
-        # -----------------------------------------------------
-        if job != "" and job.lower() != "nan":
+modelo_actual = None
 
-            if modelo_actual is not None and len(paneles) > 0:
+primera_fecha = None
+ultima_fecha = None
 
-                primer_panel = min(paneles)
-                ultimo_panel = max(paneles)
+piezas_modelo = 0
 
-                piezas = (ultimo_panel - primer_panel) + 1
+fin_modelo_anterior = None
 
-                if fin_modelo_anterior is None:
-                    inicio = primera_pieza
-                else:
-                    inicio = fin_modelo_anterior
+for _, row in df.iterrows():
 
-                fin = ultima_pieza
+    job = ""
 
-                duracion = fin - inicio
+    if pd.notna(row["Job"]):
+        job = str(row["Job"]).strip()
 
-                horas = int(duracion.total_seconds() // 3600)
-                minutos = int((duracion.total_seconds() % 3600) // 60)
+    # ──────────────────────────────────
+    # Cambio de modelo
+    # ──────────────────────────────────
+
+    if job and job.lower() != "nan":
+
+        if modelo_actual is not None:
+
+            if (
+                primera_fecha is not None
+                and ultima_fecha is not None
+            ):
+
+                inicio = (
+                    fin_modelo_anterior
+                    if fin_modelo_anterior is not None
+                    else primera_fecha
+                )
+
+                duracion = (
+                    ultima_fecha - inicio
+                )
+
+                total_min = int(
+                    duracion.total_seconds() / 60
+                )
+
+                horas = total_min // 60
+                minutos = total_min % 60
 
                 resultados.append({
                     "Modelo": modelo_actual,
                     "Horas Trabajadas": horas,
                     "Minutos Trabajados": minutos,
-                    "Piezas": piezas
+                    "Piezas": piezas_modelo
                 })
 
-                fin_modelo_anterior = ultima_pieza
+                fin_modelo_anterior = (
+                    ultima_fecha
+                )
 
-            modelo_actual = job
+        modelo_actual = job
 
-            paneles = []
-            primera_pieza = None
-            ultima_pieza = None
+        primera_fecha = None
+        ultima_fecha = None
+        piezas_modelo = 0
 
+        continue
+
+    # ──────────────────────────────────
+    # Producción
+    # ──────────────────────────────────
+
+    try:
+
+        panel = row["Panel"]
+
+        if pd.isna(panel):
             continue
 
-        # -----------------------------------------------------
-        # Filas de producción
-        # -----------------------------------------------------
-        try:
-
-            panel = int(float(row["Panel"]))
-
-            fecha = pd.to_datetime(
-                row["End time"],
-                dayfirst=True,
-                errors="coerce"
-            )
-
-            if pd.isna(fecha):
-                continue
-
-            paneles.append(panel)
-
-            if primera_pieza is None:
-                primera_pieza = fecha
-
-            ultima_pieza = fecha
-
-        except Exception:
-            continue
-
-    # ---------------------------------------------------------
-    # Último modelo
-    # ---------------------------------------------------------
-    if modelo_actual is not None and len(paneles) > 0:
-
-        primer_panel = min(paneles)
-        ultimo_panel = max(paneles)
-
-        piezas = (ultimo_panel - primer_panel) + 1
-
-        if fin_modelo_anterior is None:
-            inicio = primera_pieza
-        else:
-            inicio = fin_modelo_anterior
-
-        fin = ultima_pieza
-
-        duracion = fin - inicio
-
-        horas = int(duracion.total_seconds() // 3600)
-        minutos = int((duracion.total_seconds() % 3600) // 60)
-
-        resultados.append({
-            "Modelo": modelo_actual,
-            "Horas Trabajadas": horas,
-            "Minutos Trabajados": minutos,
-            "Piezas": piezas
-        })
-
-    return pd.DataFrame(resultados)
-
-
-# ─────────────────────────────────────────────────────────────
-# Exportar Excel
-# ─────────────────────────────────────────────────────────────
-
-def exportar_excel(reporte: pd.DataFrame) -> bytes:
-
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-
-        reporte.to_excel(
-            writer,
-            sheet_name="Resumen",
-            index=False
+        fecha = pd.to_datetime(
+            row["End time"],
+            errors="coerce",
+            dayfirst=True
         )
 
-        workbook = writer.book
-        worksheet = writer.sheets["Resumen"]
+        if pd.isna(fecha):
+            continue
 
-        header_format = workbook.add_format({
-            "bold": True,
-            "bg_color": "#185FA5",
-            "font_color": "#FFFFFF"
-        })
+        piezas_modelo += 1
 
-        for col_num, value in enumerate(reporte.columns):
-            worksheet.write(0, col_num, value, header_format)
+        if primera_fecha is None:
+            primera_fecha = fecha
 
-        worksheet.set_column("A:A", 40)
-        worksheet.set_column("B:D", 20)
+        ultima_fecha = fecha
 
-    return output.getvalue()
+    except Exception:
+        continue
 
+# ──────────────────────────────────
+# Último modelo
+# ──────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────
-# Función pública
-# ─────────────────────────────────────────────────────────────
+if (
+    modelo_actual is not None
+    and primera_fecha is not None
+    and ultima_fecha is not None
+):
 
-def procesar_excel(file_bytes: bytes):
+    inicio = (
+        fin_modelo_anterior
+        if fin_modelo_anterior is not None
+        else primera_fecha
+    )
 
-    df = leer_csv(file_bytes)
+    duracion = (
+        ultima_fecha - inicio
+    )
 
-    reporte = procesar_datos(df)
+    total_min = int(
+        duracion.total_seconds() / 60
+    )
 
-    excel_out = exportar_excel(reporte)
+    horas = total_min // 60
+    minutos = total_min % 60
 
-    resumen = {
-        "modelos": len(reporte),
-        "piezas_totales": int(reporte["Piezas"].sum()),
-        "horas_totales": int(reporte["Horas Trabajadas"].sum()),
-        "minutos_totales": int(reporte["Minutos Trabajados"].sum())
-    }
+    resultados.append({
+        "Modelo": modelo_actual,
+        "Horas Trabajadas": horas,
+        "Minutos Trabajados": minutos,
+        "Piezas": piezas_modelo
+    })
 
-    return {
-        "reporte": reporte,
-        "excel_out": excel_out,
-        "resumen": resumen
-    }
+return pd.DataFrame(resultados)
+
+──────────────────────────────────────────────
+
+Exportar Excel
+
+──────────────────────────────────────────────
+
+def exportar_excel(reporte):
+
+output = io.BytesIO()
+
+with pd.ExcelWriter(
+    output,
+    engine="xlsxwriter"
+) as writer:
+
+    reporte.to_excel(
+        writer,
+        sheet_name="Resumen",
+        index=False
+    )
+
+    ws = writer.sheets["Resumen"]
+
+    ws.set_column("A:A", 40)
+    ws.set_column("B:D", 20)
+
+return output.getvalue()
+
+──────────────────────────────────────────────
+
+Función pública
+
+──────────────────────────────────────────────
+
+def procesar_excel(
+file_bytes,
+nombre_archivo
+):
+
+df = leer_archivo(
+    file_bytes,
+    nombre_archivo
+)
+
+reporte = procesar_datos(df)
+
+excel_out = exportar_excel(
+    reporte
+)
+
+resumen = {
+    "modelos": int(len(reporte)),
+    "piezas_totales": int(
+        reporte["Piezas"].sum()
+    ) if not reporte.empty else 0,
+    "horas_totales": int(
+        reporte["Horas Trabajadas"].sum()
+    ) if not reporte.empty else 0,
+    "minutos_totales": int(
+        reporte["Minutos Trabajados"].sum()
+    ) if not reporte.empty else 0
+}
+
+return {
+    "reporte": reporte,
+    "excel_out": excel_out,
+    "resumen": resumen
+}
