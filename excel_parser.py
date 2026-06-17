@@ -340,20 +340,23 @@ def exportar_excel(reporte: pd.DataFrame) -> bytes:
             ("Piezas",             "Piezas",             12, fmt_num),
         ]
 
-        reporte.to_excel(writer, sheet_name="Resultado", index=False, startrow=1, header=False)
+        reporte.to_excel(writer, sheet_name="Resultado", index=False, startrow=0, header=False)
         ws = writer.sheets["Resultado"]
+
+        # Encabezado con más alto para que las flechas del filtro no encimen los datos
+        ws.set_row(0, 22)
 
         for i, (key, header, width, fmt) in enumerate(columnas):
             ws.write(0, i, header, fmt_header)
             ws.set_column(i, i, width)
 
-        # Aplicar formato numérico a las columnas (encabezado ya escrito arriba)
+        # Datos empiezan justo después del encabezado (fila 1 en adelante)
         for r in range(len(reporte)):
             for i, (key, _, _, fmt) in enumerate(columnas):
-                ws.write(r + 2, i, reporte.iloc[r][key], fmt)
+                ws.write(r + 1, i, reporte.iloc[r][key], fmt)
 
-        ws.freeze_panes(2, 0)
-        ws.autofilter(1, 0, len(reporte) + 1, len(columnas) - 1)
+        ws.freeze_panes(1, 0)
+        ws.autofilter(0, 0, len(reporte), len(columnas) - 1)
 
     return output.getvalue()
 
