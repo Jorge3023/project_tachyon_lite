@@ -267,7 +267,7 @@ def calcular_bloques(df: pd.DataFrame) -> pd.DataFrame:
         segundos_trabajados = max(delta.total_seconds(), 0.0)
 
         horas_trabajadas   = int(segundos_trabajados // 3600)
-        minutos_trabajados = int((segundos_trabajados % 3600) // 60)
+        minutos_totales    = int(segundos_trabajados // 60)   # total convertido a minutos
 
         resultados.append({
             "Modelo":             modelo,
@@ -275,7 +275,7 @@ def calcular_bloques(df: pd.DataFrame) -> pd.DataFrame:
             "_inicio_referencia": inicio_referencia,
             "_fin_bloque":        ultima_pieza,
             "Horas Trabajadas":   horas_trabajadas,
-            "Minutos Trabajados": minutos_trabajados,
+            "Minutos Trabajados": minutos_totales,
             "Piezas":             piezas,
             "_horas_decimal":     round(segundos_trabajados / 3600, 4),
         })
@@ -297,7 +297,6 @@ def consolidar_reporte(bloques: pd.DataFrame) -> pd.DataFrame:
         .groupby("Modelo", as_index=False)
         .agg(
             **{
-                "Horas Trabajadas":   ("_horas_decimal", lambda s: int(s.sum() // 1)),
                 "_horas_decimal_sum": ("_horas_decimal", "sum"),
                 "Piezas":             ("Piezas", "sum"),
                 "_corridas":          ("_bloque_id", "count"),
@@ -305,12 +304,9 @@ def consolidar_reporte(bloques: pd.DataFrame) -> pd.DataFrame:
         )
     )
 
-    # Recalcular horas/minutos enteros a partir de la suma decimal total
-    horas_enteras   = reporte["_horas_decimal_sum"].astype(int)
-    minutos_restantes = ((reporte["_horas_decimal_sum"] - horas_enteras) * 60).round().astype(int)
-
-    reporte["Horas Trabajadas"]   = horas_enteras
-    reporte["Minutos Trabajados"] = minutos_restantes
+    # Horas Trabajadas = parte entera de horas; Minutos Trabajados = TOTAL en minutos
+    reporte["Horas Trabajadas"]   = reporte["_horas_decimal_sum"].astype(int)
+    reporte["Minutos Trabajados"] = (reporte["_horas_decimal_sum"] * 60).round().astype(int)
     reporte = reporte.drop(columns=["_horas_decimal_sum"])
 
     # Mantener el orden de primera aparición del modelo en el archivo original
@@ -334,8 +330,8 @@ def exportar_excel(reporte: pd.DataFrame) -> bytes:
             "border": 1, "align": "center", "valign": "vcenter",
             "font_name": "Arial", "font_size": 10,
         })
-        fmt_cell = wb.add_format({"font_name": "Arial", "font_size": 10})
-        fmt_num  = wb.add_format({"num_format": "#,##0", "font_name": "Arial", "font_size": 10})
+        fmt_cell = wb.add_format({"font_name": "Arial", "font_size": 10, "align": "center", "valign": "vcenter"})
+        fmt_num  = wb.add_format({"num_format": "#,##0", "font_name": "Arial", "font_size": 10, "align": "center", "valign": "vcenter"})
 
         columnas = [
             ("Modelo",             "Modelo",             32, fmt_cell),
