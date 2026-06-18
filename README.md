@@ -33,3 +33,7 @@ smt-analyzer/
 ├── Procfile         ← Para Railway/Render
 └── .gitignore
 ```
+
+## Pagina Principal
+
+![pagina](images/pagina.png)
